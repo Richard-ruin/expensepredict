@@ -1,13 +1,62 @@
-// lib/screens/predictions/prediction_chart.dart
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:expensepredict/services/api_service.dart';
+import 'package:intl/intl.dart';
 import 'package:expensepredict/constants/colors.dart';
 
-class PredictionChart extends StatelessWidget {
+class PredictionChart extends StatefulWidget {
   const PredictionChart({super.key});
 
   @override
+  State<PredictionChart> createState() => _PredictionChartState();
+}
+
+class _PredictionChartState extends State<PredictionChart> {
+  final _apiService = ApiService();
+  List<Map<String, dynamic>> _predictions = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPredictions();
+  }
+
+  Future<void> _loadPredictions() async {
+    try {
+      final predictions = await _apiService.getPredictions();
+      setState(() {
+        _predictions = predictions;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Buat spots dari prediksi
+    final spots = _predictions.asMap().entries.map((entry) {
+      return FlSpot(
+        entry.key.toDouble(),
+        entry.value['predicted_amount'].toDouble(),
+      );
+    }).toList();
+
+    // Temukan nilai minimum dan maksimum untuk skala y
+    double minY = spots.map((spot) => spot.y).reduce((a, b) => a < b ? a : b);
+    double maxY = spots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
+    
+    // Tambahkan margin 10% untuk skala y
+    double yMargin = (maxY - minY) * 0.1;
+    minY = minY - yMargin;
+    maxY = maxY + yMargin;
+
     return Column(
       children: [
         Container(
@@ -18,8 +67,7 @@ class PredictionChart extends StatelessWidget {
               gridData: FlGridData(
                 show: true,
                 drawVerticalLine: true,
-                horizontalInterval: 1,
-                verticalInterval: 1,
+                horizontalInterval: (maxY - minY) / 5,
                 getDrawingHorizontalLine: (value) {
                   return FlLine(
                     color: Colors.grey.withOpacity(0.2),
@@ -35,10 +83,10 @@ class PredictionChart extends StatelessWidget {
               ),
               titlesData: FlTitlesData(
                 show: true,
-                rightTitles: AxisTitles(
+                rightTitles: const AxisTitles(
                   sideTitles: SideTitles(showTitles: false),
                 ),
-                topTitles: AxisTitles(
+                topTitles: const AxisTitles(
                   sideTitles: SideTitles(showTitles: false),
                 ),
                 bottomTitles: AxisTitles(
@@ -47,31 +95,20 @@ class PredictionChart extends StatelessWidget {
                     reservedSize: 30,
                     interval: 1,
                     getTitlesWidget: (value, meta) {
-                      const style = TextStyle(
-                        color: Color(0xff68737d),
-                        fontSize: 12,
-                      );
-                      Widget text;
-                      switch (value.toInt()) {
-                        case 0:
-                          text = const Text('JAN', style: style);
-                          break;
-                        case 2:
-                          text = const Text('MAR', style: style);
-                          break;
-                        case 4:
-                          text = const Text('MAY', style: style);
-                          break;
-                        case 6:
-                          text = const Text('JUL', style: style);
-                          break;
-                        default:
-                          text = const Text('', style: style);
-                          break;
+                      if (value.toInt() >= _predictions.length) {
+                        return const Text('');
                       }
-                      return SideTitleWidget(
-                        axisSide: meta.axisSide,
-                        child: text,
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          DateFormat('dd/MM').format(
+                            DateTime.parse(_predictions[value.toInt()]['date']),
+                          ),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -79,94 +116,84 @@ class PredictionChart extends StatelessWidget {
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: 1,
+                    reservedSize: 50,
+                    interval: (maxY - minY) / 5,
                     getTitlesWidget: (value, meta) {
                       return Text(
-                        '${value.toInt()}M',
+                        NumberFormat.currency(
+                          locale: 'id',
+                          symbol: '',
+                          decimalDigits: 0,
+                        ).format(value),
                         style: const TextStyle(
-                          color: Color(0xff67727d),
                           fontSize: 12,
+                          color: Colors.grey,
                         ),
                       );
                     },
-                    reservedSize: 42,
                   ),
                 ),
               ),
               borderData: FlBorderData(
                 show: true,
-                border: Border.all(color: const Color(0xff37434d), width: 1),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
               ),
               minX: 0,
-              maxX: 6,
-              minY: 0,
-              maxY: 6,
+              maxX: (_predictions.length - 1).toDouble(),
+              minY: minY,
+              maxY: maxY,
               lineBarsData: [
-                // Actual Data
                 LineChartBarData(
-                  spots: const [
-                    FlSpot(0, 3),
-                    FlSpot(1, 2.5),
-                    FlSpot(2, 3.1),
-                    FlSpot(3, 3.2),
-                  ],
+                  spots: spots,
                   isCurved: true,
                   color: AppColors.teal,
                   barWidth: 3,
                   isStrokeCapRound: true,
-                  dotData: FlDotData(show: true),
+                  dotData: FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 4,
+                        color: AppColors.teal,
+                        strokeWidth: 2,
+                        strokeColor: Colors.white,
+                      );
+                    },
+                  ),
                   belowBarData: BarAreaData(
                     show: true,
                     color: AppColors.teal.withOpacity(0.2),
                   ),
                 ),
-                // Predicted Data
-                LineChartBarData(
-                  spots: const [
-                    FlSpot(3, 3.2),
-                    FlSpot(4, 3.3),
-                    FlSpot(5, 3.5),
-                    FlSpot(6, 3.7),
-                  ],
-                  isCurved: true,
-                  color: AppColors.warmOrange,
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(show: true),
-                  dashArray: [5, 5],
-                ),
               ],
             ),
           ),
         ),
+        // Legend
         Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildLegendItem(AppColors.teal, 'Data Aktual'),
-              const SizedBox(width: 20),
-              _buildLegendItem(AppColors.warmOrange, 'Prediksi'),
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: AppColors.teal,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Prediksi Pengeluaran',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
             ],
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildLegendItem(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label),
       ],
     );
   }

@@ -1,49 +1,67 @@
 // lib/screens/home/widgets/recent_transactions.dart
 import 'package:flutter/material.dart';
-import '../../../constants/colors.dart';
+import 'package:expensepredict/services/api_service.dart';
+import 'package:expensepredict/models/expense.dart';
+import 'package:expensepredict/models/category.dart';
+import 'package:intl/intl.dart';
 
-class RecentTransactions extends StatelessWidget {
+class RecentTransactions extends StatefulWidget {
   const RecentTransactions({super.key});
 
   @override
+  State<RecentTransactions> createState() => _RecentTransactionsState();
+}
+
+class _RecentTransactionsState extends State<RecentTransactions> {
+  final _apiService = ApiService();
+  List<Expense> _expenses = [];
+  List<Category> _categories = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final expensesData = await _apiService.getExpenses();
+      final categoriesData = await _apiService.getCategories();
+
+      setState(() {
+        _expenses = expensesData.map((e) => Expense.fromJson(e)).toList();
+        _categories = categoriesData.map((c) => Category.fromJson(c)).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      // Handle error
+    }
+  }
+
+  String _formatAmount(double amount) {
+    final formatter = NumberFormat.currency(
+      locale: 'id',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    );
+    return formatter.format(amount);
+  }
+
+  Category? _getCategoryById(int id) {
+    try {
+      return _categories.firstWhere((c) => c.id == id);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> transactions = [
-      {
-        'title': 'Makan Siang',
-        'date': '20 Feb 2024',
-        'amount': 'Rp 50.000',
-        'icon': Icons.restaurant,
-        'category': 'Makanan'
-      },
-      {
-        'title': 'Transport Gojek',
-        'date': '20 Feb 2024',
-        'amount': 'Rp 25.000',
-        'icon': Icons.directions_car,
-        'category': 'Transport'
-      },
-      {
-        'title': 'Belanja Bulanan',
-        'date': '19 Feb 2024',
-        'amount': 'Rp 750.000',
-        'icon': Icons.shopping_cart,
-        'category': 'Belanja'
-      },
-      {
-        'title': 'Internet',
-        'date': '19 Feb 2024',
-        'amount': 'Rp 350.000',
-        'icon': Icons.wifi,
-        'category': 'Utilitas'
-      },
-      {
-        'title': 'Nonton Bioskop',
-        'date': '18 Feb 2024',
-        'amount': 'Rp 100.000',
-        'icon': Icons.movie,
-        'category': 'Hiburan'
-      },
-    ];
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return Card(
       elevation: 4,
@@ -59,21 +77,17 @@ class RecentTransactions extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Transaksi Terakhir',
+                  'Recent Transactions',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.darkBlue,
                   ),
                 ),
                 TextButton(
                   onPressed: () {
                     // Navigate to all transactions
                   },
-                  child: const Text(
-                    'Lihat Semua',
-                    style: TextStyle(color: AppColors.teal),
-                  ),
+                  child: const Text('See All'),
                 ),
               ],
             ),
@@ -81,42 +95,43 @@ class RecentTransactions extends StatelessWidget {
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: transactions.length,
+              itemCount: _expenses.take(5).length,
               separatorBuilder: (context, index) => const Divider(),
               itemBuilder: (context, index) {
-                final transaction = transactions[index];
+                final expense = _expenses[index];
+                final category = _getCategoryById(expense.categoryId);
+
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.teal.withOpacity(0.1),
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
-                      transaction['icon'] as IconData,
-                      color: AppColors.teal,
+                      Icons.attach_money, // Use category icon here
+                      color: Theme.of(context).primaryColor,
                     ),
                   ),
                   title: Text(
-                    transaction['title'] as String,
+                    expense.description,
                     style: const TextStyle(
                       fontWeight: FontWeight.w500,
-                      color: AppColors.darkBlue,
                     ),
                   ),
                   subtitle: Text(
-                    '${transaction['category']} • ${transaction['date']}',
+                    '${category?.name ?? 'Unknown'} • ${DateFormat('dd MMM yyyy').format(expense.date)}',
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 12,
                     ),
                   ),
                   trailing: Text(
-                    transaction['amount'] as String,
+                    _formatAmount(expense.amount),
                     style: const TextStyle(
-                      color: AppColors.softRed,
                       fontWeight: FontWeight.bold,
+                      color: Colors.red,
                     ),
                   ),
                 );

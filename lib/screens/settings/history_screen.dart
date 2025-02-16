@@ -1,6 +1,10 @@
-// lib/screens/settings/history_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import 'package:expensepredict/constants/colors.dart';
+import 'package:expensepredict/providers/expense_provider.dart';
+import 'package:expensepredict/models/expense.dart';
+
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
@@ -10,52 +14,14 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Riwayat Pengeluaran'),
-        backgroundColor: AppColors.teal,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              // Show filter options
-            },
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildMonthSection('Februari 2024', [
-            _buildHistoryItem(
-              date: '20 Feb 2024',
-              title: 'Makan Siang',
-              amount: 'Rp 50.000',
-              category: 'Makanan',
-              icon: Icons.restaurant,
-            ),
-            _buildHistoryItem(
-              date: '19 Feb 2024',
-              title: 'Transport',
-              amount: 'Rp 25.000',
-              category: 'Transport',
-              icon: Icons.directions_car,
-            ),
-          ]),
-          const SizedBox(height: 16),
-          _buildMonthSection('Januari 2024', [
-            _buildHistoryItem(
-              date: '31 Jan 2024',
-              title: 'Belanja Bulanan',
-              amount: 'Rp 750.000',
-              category: 'Belanja',
-              icon: Icons.shopping_cart,
-            ),
-          ]),
-        ],
-      ),
-    );
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final provider = Provider.of<ExpenseProvider>(context, listen: false);
+    await provider.loadData();
   }
 
   Widget _buildMonthSection(String month, List<Widget> items) {
@@ -83,12 +49,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildHistoryItem({
-    required String date,
+    required DateTime date,
     required String title,
-    required String amount,
+    required double amount,
     required String category,
     required IconData icon,
   }) {
+    final formatter = NumberFormat.currency(
+      locale: 'id',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -114,7 +86,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                 ),
                 Text(
-                  '$category • $date',
+                  '$category • ${DateFormat('dd MMM yyyy').format(date)}',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 12,
@@ -124,13 +96,73 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           Text(
-            amount,
+            formatter.format(amount),
             style: const TextStyle(
               color: AppColors.softRed,
               fontWeight: FontWeight.bold,
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Map<String, List<Expense>> _groupExpensesByMonth(List<Expense> expenses) {
+    final grouped = <String, List<Expense>>{};
+    for (var expense in expenses) {
+      final monthKey = DateFormat('MMMM yyyy').format(expense.date);
+      if (!grouped.containsKey(monthKey)) {
+        grouped[monthKey] = [];
+      }
+      grouped[monthKey]!.add(expense);
+    }
+    return grouped;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Riwayat Pengeluaran'),
+        backgroundColor: AppColors.teal,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.filter_list),
+            onPressed: () {
+              // Show filter options
+            },
+          ),
+        ],
+      ),
+      body: Consumer<ExpenseProvider>(
+        builder: (context, provider, child) {
+          if (provider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final expensesByMonth = _groupExpensesByMonth(provider.expenses);
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: expensesByMonth.length,
+            itemBuilder: (context, index) {
+              final monthData = expensesByMonth.entries.elementAt(index);
+              return _buildMonthSection(
+                monthData.key,
+                monthData.value.map((expense) {
+                  final category = provider.getCategoryById(expense.categoryId);
+                  return _buildHistoryItem(
+                    date: expense.date,
+                    title: expense.description,
+                    amount: expense.amount,
+                    category: category?.name ?? 'Unknown',
+                    icon: Icons.category,
+                  );
+                }).toList(),
+              );
+            },
+          );
+        },
       ),
     );
   }

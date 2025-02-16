@@ -1,6 +1,9 @@
-// lib/screens/settings/category_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:expensepredict/constants/colors.dart';
+import 'package:expensepredict/providers/expense_provider.dart';
+import 'package:expensepredict/services/api_service.dart';
+
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
 
@@ -9,13 +12,20 @@ class CategoryScreen extends StatefulWidget {
 }
 
 class _CategoryScreenState extends State<CategoryScreen> {
-  final List<Map<String, dynamic>> categories = [
-    {'name': 'Makanan', 'icon': Icons.restaurant, 'color': AppColors.teal},
-    {'name': 'Transport', 'icon': Icons.directions_car, 'color': AppColors.warmOrange},
-    {'name': 'Belanja', 'icon': Icons.shopping_cart, 'color': AppColors.softRed},
-    {'name': 'Utilitas', 'icon': Icons.power, 'color': AppColors.goldenYellow},
-    {'name': 'Hiburan', 'icon': Icons.movie, 'color': AppColors.darkBlue},
-  ];
+  final _apiService = ApiService();
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final provider = Provider.of<ExpenseProvider>(context, listen: false);
+    await provider.loadData();
+    setState(() => _isLoading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,50 +34,60 @@ class _CategoryScreenState extends State<CategoryScreen> {
         title: const Text('Kategori Pengeluaran'),
         backgroundColor: AppColors.teal,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: categories.length,
-              separatorBuilder: (context, index) => const Divider(),
-              itemBuilder: (context, index) {
-                final category = categories[index];
-                return ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: (category['color'] as Color).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      category['icon'] as IconData,
-                      color: category['color'] as Color,
-                    ),
-                  ),
-                  title: Text(category['name'] as String),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: AppColors.teal),
-                        onPressed: () => _showCategoryDialog(context, category),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Consumer<ExpenseProvider>(
+              builder: (context, provider, child) {
+                final categories = provider.categories;
+
+                return ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: AppColors.softRed),
-                        onPressed: () => _showDeleteDialog(context, category),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: categories.length,
+                        separatorBuilder: (context, index) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final category = categories[index];
+                          return ListTile(
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.teal.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.category, // Use category.icon here
+                                color: AppColors.teal,
+                              ),
+                            ),
+                            title: Text(category.name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: AppColors.teal),
+                                  onPressed: () => _showCategoryDialog(context, category),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: AppColors.softRed),
+                                  onPressed: () => _showDeleteDialog(context, category),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 );
               },
             ),
-          ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.teal,
         onPressed: () => _showCategoryDialog(context, null),
@@ -76,11 +96,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
     );
   }
 
-  Future<void> _showCategoryDialog(
-      BuildContext context, Map<String, dynamic>? category) {
+  Future<void> _showCategoryDialog(BuildContext context, dynamic category) {
     final isEditing = category != null;
-    final nameController =
-        TextEditingController(text: isEditing ? category['name'] as String : '');
+    final nameController = TextEditingController(
+      text: isEditing ? category.name : '',
+    );
 
     return showDialog(
       context: context,
@@ -97,7 +117,6 @@ class _CategoryScreenState extends State<CategoryScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // Add icon picker and color picker if needed
           ],
         ),
         actions: [
@@ -109,8 +128,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.teal,
             ),
-            onPressed: () {
-              // Handle save category
+            onPressed: () async {
+              // Handle save category using API
               Navigator.pop(context);
             },
             child: Text(isEditing ? 'Simpan' : 'Tambah'),
@@ -120,14 +139,12 @@ class _CategoryScreenState extends State<CategoryScreen> {
     );
   }
 
-  Future<void> _showDeleteDialog(
-      BuildContext context, Map<String, dynamic> category) {
+  Future<void> _showDeleteDialog(BuildContext context, dynamic category) {
     return showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Hapus Kategori'),
-        content:
-            Text('Apakah Anda yakin ingin menghapus kategori ${category['name']}?'),
+        content: Text('Apakah Anda yakin ingin menghapus kategori ${category.name}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -137,8 +154,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.softRed,
             ),
-            onPressed: () {
-              // Handle delete category
+            onPressed: () async {
+              // Handle delete category using API
               Navigator.pop(context);
             },
             child: const Text('Hapus'),
